@@ -16,7 +16,7 @@ struct IslandView: View {
         let shape = NotchShape(shoulder: shoulder, bottomRadius: radius)
 
         ZStack(alignment: .top) {
-            compactLayout
+            compactLayout(stage: stage)
                 .frame(width: state.compactSize.width, height: state.compactSize.height)
                 .opacity(stage == .compact ? 1 : 0)
 
@@ -51,24 +51,36 @@ struct IslandView: View {
         .environment(\.colorScheme, .dark)
     }
 
-    private var compactLayout: some View {
-        HStack(spacing: 0) {
+    private func compactLayout(stage: IslandStage) -> some View {
+        let badge = state.compactSize.height - 15
+
+        return HStack(spacing: 0) {
             ArtworkView(image: monitor.artwork,
                         accent: monitor.accentColor,
-                        size: state.compactSize.height - 15,
+                        size: badge,
                         corner: 7)
 
             Spacer(minLength: state.metrics.width)
 
-            if monitor.state == .playing {
-                Visualizer(isPlaying: true, color: monitor.accentColor)
-            } else {
-                Image(systemName: "pause.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(monitor.accentColor.opacity(0.8))
+            TimelineView(.animation(minimumInterval: 0.5, paused: stage != .compact)) { _ in
+                ProgressRing(progress: monitor.progress,
+                             accent: monitor.accentColor,
+                             diameter: badge,
+                             lineWidth: 2.2) {
+                    if monitor.state == .playing {
+                        Visualizer(isPlaying: true,
+                                   color: monitor.accentColor,
+                                   height: badge * 0.42,
+                                   barWidth: 2)
+                    } else {
+                        Image(systemName: "pause.fill")
+                            .font(.system(size: badge * 0.34, weight: .bold))
+                            .foregroundStyle(monitor.accentColor)
+                    }
+                }
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, state.shoulder(for: .compact) + 12)
     }
 
     private func expandedLayout(stage: IslandStage) -> some View {
