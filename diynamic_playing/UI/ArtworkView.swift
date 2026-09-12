@@ -5,6 +5,8 @@ struct ArtworkView: View {
     var accent: Color
     var size: CGFloat
     var corner: CGFloat
+    var zoom: CGFloat = 1
+    var pan: CGSize = .zero
 
     var body: some View {
         Group {
@@ -23,6 +25,9 @@ struct ArtworkView: View {
                     }
             }
         }
+        .frame(width: size, height: size)
+        .scaleEffect(zoom)
+        .offset(pan)
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         .overlay {

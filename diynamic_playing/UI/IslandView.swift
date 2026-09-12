@@ -19,10 +19,17 @@ struct IslandView: View {
             compactLayout(stage: stage)
                 .frame(width: state.compactSize.width, height: state.compactSize.height)
                 .opacity(stage == .compact ? 1 : 0)
+                .allowsHitTesting(stage == .compact)
 
             expandedLayout(stage: stage)
                 .frame(width: state.expandedSize.width, height: state.expandedSize.height)
                 .opacity(stage == .expanded ? 1 : 0)
+                .allowsHitTesting(stage == .expanded)
+
+            focusedLayout
+                .frame(width: state.focusedSize.width, height: state.focusedSize.height)
+                .opacity(stage == .focused ? 1 : 0)
+                .allowsHitTesting(stage == .focused)
         }
         .frame(width: size.width, height: size.height, alignment: .top)
         .background {
@@ -84,7 +91,7 @@ struct IslandView: View {
             HStack(alignment: .top, spacing: 14) {
                 ArtworkView(image: monitor.artwork,
                             accent: monitor.accentColor,
-                            size: 78,
+                            size: state.expandedArtworkSize,
                             corner: 13)
                     .onTapGesture { monitor.activateSourceApp() }
 
@@ -106,17 +113,36 @@ struct IslandView: View {
 
                     scrubber(stage: stage)
                 }
-                .frame(height: 78)
+                .frame(height: state.expandedArtworkSize)
             }
-            .padding(.top, 12)
+            .padding(.top, state.artworkTopGap)
 
             controls
                 .padding(.top, 12)
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 22)
+        .padding(.horizontal, state.expandedArtworkInset)
         .padding(.bottom, 14)
+    }
+
+    private var focusedLayout: some View {
+        VStack(spacing: 0) {
+            Color.clear
+                .frame(height: state.metrics.height)
+
+            ArtworkView(image: monitor.artwork,
+                        accent: monitor.accentColor,
+                        size: state.focusedArtworkSize,
+                        corner: 20,
+                        zoom: state.artworkZoom,
+                        pan: state.artworkPan)
+                .padding(.top, state.artworkTopGap)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, state.focusedArtworkInset)
+        .padding(.bottom, state.focusedArtworkInset)
     }
 
     private var header: some View {
