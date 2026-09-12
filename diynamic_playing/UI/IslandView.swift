@@ -2,14 +2,25 @@ import SwiftUI
 
 extension Animation {
     static let island = Animation.spring(response: 0.42, dampingFraction: 0.78)
+    static let islandCalm = Animation.smooth(duration: 0.6)
+    static let artworkSlide = Animation.smooth(duration: 0.9)
 }
 
 struct IslandView: View {
     private let monitor = NowPlayingMonitor.shared
     private let state = IslandState.shared
 
+    private let swap = TrackSwap.shared
+
+    private var accentRGB: RGB { swap.showsLeaving ? swap.leavingAccent : monitor.accent }
+
+    private var accent: Color { accentRGB.color }
+
+    private var shownTrack: Track? { swap.showsLeaving ? swap.leavingTrack : monitor.track }
+
     var body: some View {
         let stage = state.stage(for: monitor)
+        let lifted = stage == .expanded
         let size = state.pillSize(for: stage)
         let shoulder = state.shoulder(for: stage)
         let radius = state.bottomRadius(for: stage)
@@ -23,8 +34,8 @@ struct IslandView: View {
 
             expandedLayout(stage: stage)
                 .frame(width: state.expandedSize.width, height: state.expandedSize.height)
-                .opacity(stage == .expanded ? 1 : 0)
-                .allowsHitTesting(stage == .expanded)
+                .opacity(lifted ? 1 : 0)
+                .allowsHitTesting(lifted)
 
             focusedLayout
                 .frame(width: state.focusedSize.width, height: state.focusedSize.height)
@@ -35,19 +46,19 @@ struct IslandView: View {
         .background {
             shape.fill(.black)
             shape.fill(
-                LinearGradient(colors: [monitor.accentColor.opacity(0.16 * monitor.accentStrength), .clear],
+                LinearGradient(colors: [accent.opacity(0.16 * accentRGB.strength), .clear],
                                startPoint: .top, endPoint: .bottom)
             )
             shape.stroke(.white.opacity(0.09), lineWidth: 0.6)
         }
         .clipShape(shape)
         .compositingGroup()
-        .shadow(color: .black.opacity(stage == .expanded ? 0.55 : 0.3),
-                radius: stage == .expanded ? 22 : 8, y: stage == .expanded ? 10 : 4)
+        .shadow(color: .black.opacity(lifted ? 0.55 : 0.3),
+                radius: lifted ? 22 : 8, y: lifted ? 10 : 4)
         .opacity(stage == .hidden ? 0 : 1)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(.island, value: stage)
-        .animation(.easeInOut(duration: 0.35), value: monitor.accent)
+        .animation(swap.isActive ? .islandCalm : .island, value: stage)
+        .animation(.easeInOut(duration: 0.35), value: accentRGB)
         .environment(\.colorScheme, .dark)
     }
 
@@ -87,24 +98,22 @@ struct IslandView: View {
         VStack(spacing: 0) {
             header
                 .frame(height: state.metrics.height)
+                .opacity(swap.infoOpacity)
+                .animation(swap.infoAnimation, value: swap.infoOpacity)
 
             HStack(alignment: .top, spacing: 14) {
-                ArtworkView(image: monitor.artwork,
-                            accent: monitor.accentColor,
-                            size: state.expandedArtworkSize,
-                            corner: 13)
-                    .onTapGesture { monitor.activateSourceApp() }
+                artworkStrip
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(monitor.track?.title ?? "")
+                    Text(shownTrack?.title ?? "")
                         .font(.system(size: 14.5, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    Text(monitor.track?.artist ?? "")
+                    Text(shownTrack?.artist ?? "")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white.opacity(0.62))
                         .lineLimit(1)
-                    Text(monitor.track?.album ?? "")
+                    Text(shownTrack?.album ?? "")
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.32))
                         .lineLimit(1)
@@ -114,16 +123,45 @@ struct IslandView: View {
                     scrubber(stage: stage)
                 }
                 .frame(height: state.expandedArtworkSize)
+                .opacity(swap.infoOpacity)
+                .allowsHitTesting(stage == .expanded && !swap.isActive)
+                .animation(swap.infoAnimation, value: swap.infoOpacity)
             }
             .padding(.top, state.artworkTopGap)
 
             controls
                 .padding(.top, 12)
+                .opacity(swap.infoOpacity)
+                .animation(swap.infoAnimation, value: swap.infoOpacity)
 
             Spacer(minLength: 0)
         }
         .padding(.horizontal, state.expandedArtworkInset)
         .padding(.bottom, 14)
+    }
+
+    private var artworkStrip: some View {
+        ZStack {
+            ArtworkView(image: swap.leaving,
+                        accent: swap.leavingColor,
+                        size: state.expandedArtworkSize,
+                        corner: 13)
+                .opacity(swap.leavingOpacity)
+                .animation(swap.leavingFade, value: swap.leavingOpacity)
+                .offset(x: swap.leavingOffset)
+                .animation(swap.leavingSlide, value: swap.leavingOffset)
+
+            ArtworkView(image: monitor.artwork,
+                        accent: monitor.accentColor,
+                        size: state.expandedArtworkSize,
+                        corner: 13)
+                .opacity(swap.arrivingOpacity)
+                .animation(swap.arrivingFade, value: swap.arrivingOpacity)
+                .offset(x: swap.arrivingOffset)
+                .animation(swap.arrivingSlide, value: swap.arrivingOffset)
+        }
+        .frame(width: state.expandedArtworkSize, height: state.expandedArtworkSize)
+        .onTapGesture { monitor.activateSourceApp() }
     }
 
     private var focusedLayout: some View {
@@ -154,7 +192,7 @@ struct IslandView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .tracking(0.6)
             }
-            .foregroundStyle(monitor.accentColor)
+            .foregroundStyle(accent)
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Spacer().frame(width: state.metrics.width)
@@ -165,7 +203,7 @@ struct IslandView: View {
                     .tracking(0.8)
                     .foregroundStyle(.white.opacity(0.42))
                 Visualizer(isPlaying: monitor.state == .playing,
-                           color: monitor.accentColor,
+                           color: accent,
                            height: 11,
                            barWidth: 2)
             }
@@ -175,10 +213,13 @@ struct IslandView: View {
 
     private func scrubber(stage: IslandStage) -> some View {
         TimelineView(.animation(minimumInterval: 0.2, paused: stage != .expanded)) { _ in
-            ScrubBar(progress: monitor.progress,
-                     accent: monitor.accentColor,
-                     elapsed: Self.time(monitor.position),
-                     remaining: "-" + Self.time(max(0, (monitor.track?.duration ?? 0) - monitor.position)),
+            let frozen = swap.showsLeaving && monitor.track?.id != swap.fromID
+            let position = frozen ? swap.leavingPosition : monitor.position
+            let duration = shownTrack?.duration ?? 0
+            ScrubBar(progress: frozen ? swap.leavingProgress : monitor.progress,
+                     accent: accent,
+                     elapsed: Self.time(position),
+                     remaining: "-" + Self.time(max(0, duration - position)),
                      onScrubbingChanged: { state.isScrubbing = $0 },
                      onSeek: { monitor.seek(toFraction: $0) })
         }
@@ -186,16 +227,16 @@ struct IslandView: View {
 
     private var controls: some View {
         HStack(spacing: 24) {
-            ControlButton(symbol: "backward.fill", size: 14, accent: monitor.accentColor) {
+            ControlButton(symbol: "backward.fill", size: 14, accent: accent) {
                 monitor.previousTrack()
             }
             ControlButton(symbol: monitor.state == .playing ? "pause.fill" : "play.fill",
                           size: 17,
-                          accent: monitor.accentColor,
+                          accent: accent,
                           prominent: true) {
                 monitor.togglePlayPause()
             }
-            ControlButton(symbol: "forward.fill", size: 14, accent: monitor.accentColor) {
+            ControlButton(symbol: "forward.fill", size: 14, accent: accent) {
                 monitor.nextTrack()
             }
         }

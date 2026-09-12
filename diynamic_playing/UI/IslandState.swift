@@ -49,6 +49,7 @@ final class IslandState {
 
     func stage(for monitor: NowPlayingMonitor) -> IslandStage {
         guard monitor.isActive else { return .hidden }
+        if TrackSwap.shared.isActive { return .expanded }
         guard isHovered || isScrubbing || isPeeking else { return .compact }
         return isArtworkFocused ? .focused : .expanded
     }

@@ -2,6 +2,13 @@ import AppKit
 import Observation
 import SwiftUI
 
+struct TrackChange {
+    var previous: Track?
+    var previousPosition: TimeInterval
+    var previousArtwork: NSImage?
+    var previousAccent: RGB
+}
+
 @Observable
 final class NowPlayingMonitor {
     static let shared = NowPlayingMonitor()
@@ -13,8 +20,10 @@ final class NowPlayingMonitor {
     private(set) var accent: RGB = .neutral
 
     private(set) var automationDenied = false
+    private(set) var isArtworkPending = false
 
-    var onTrackChange: (() -> Void)?
+    var onTrackChange: ((TrackChange) -> Void)?
+    var onSkip: ((Bool) -> Void)?
 
     private var positionSample: TimeInterval = 0
     private var sampleDate: Date = .distantPast
@@ -150,7 +159,11 @@ final class NowPlayingMonitor {
     }
 
     private func apply(_ snapshot: Snapshot) {
-        let changedTrack = track?.id != snapshot.track.id
+        let previous = track
+        let previousPosition = position
+        let previousArtwork = artwork
+        let previousAccent = accent
+        let changedTrack = previous?.id != snapshot.track.id
 
         source = snapshot.source
         state = snapshot.state
@@ -161,7 +174,10 @@ final class NowPlayingMonitor {
 
         if changedTrack {
             loadArtwork(for: snapshot)
-            onTrackChange?()
+            onTrackChange?(TrackChange(previous: previous,
+                                       previousPosition: previousPosition,
+                                       previousArtwork: previousArtwork,
+                                       previousAccent: previousAccent))
         } else if artworkKey != key(for: snapshot) {
             loadArtwork(for: snapshot)
         }
@@ -175,6 +191,7 @@ final class NowPlayingMonitor {
         artwork = nil
         accent = .neutral
         artworkKey = nil
+        isArtworkPending = false
     }
 
     private func key(for snapshot: Snapshot) -> String {
@@ -184,18 +201,21 @@ final class NowPlayingMonitor {
     private func loadArtwork(for snapshot: Snapshot) {
         let newKey = key(for: snapshot)
         artworkKey = newKey
+        isArtworkPending = true
         Task { [weak self] in
             let data = await Artwork.load(source: snapshot.source, track: snapshot.track)
             guard let self, self.artworkKey == newKey else { return }
             guard let data, let image = NSImage(data: data) else {
                 self.artwork = nil
                 self.accent = .neutral
+                self.isArtworkPending = false
                 return
             }
             let accent = await Task.detached(priority: .utility) { Artwork.accent(from: data) }.value
             guard self.artworkKey == newKey else { return }
             self.artwork = image
             self.accent = accent
+            self.isArtworkPending = false
         }
     }
 
@@ -207,12 +227,14 @@ final class NowPlayingMonitor {
 
     func nextTrack() {
         guard let source else { return }
+        onSkip?(true)
         AppleScriptBridge.fire(PlayerScripts.nextTrack(source))
         refreshSoon(after: .milliseconds(320))
     }
 
     func previousTrack() {
         guard let source else { return }
+        onSkip?(false)
         AppleScriptBridge.fire(PlayerScripts.previousTrack(source))
         refreshSoon(after: .milliseconds(320))
     }

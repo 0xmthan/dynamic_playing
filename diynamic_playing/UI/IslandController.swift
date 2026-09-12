@@ -19,12 +19,16 @@ final class IslandController {
     private var hoverTimer: Timer?
     private var eventMonitors: [Any] = []
     private var peekTask: Task<Void, Never>?
+    private var swapTask: Task<Void, Never>?
+    private var anticipatedTrackID: String?
 
     func start() {
         buildPanel()
-        NowPlayingMonitor.shared.onTrackChange = { [weak self] in
-            IslandState.shared.resetArtworkZoom()
-            self?.peek()
+        NowPlayingMonitor.shared.onTrackChange = { [weak self] change in
+            self?.handleTrackChange(change)
+        }
+        NowPlayingMonitor.shared.onSkip = { [weak self] forward in
+            self?.handleSkip(forward: forward)
         }
         NowPlayingMonitor.shared.start()
 
@@ -106,7 +110,10 @@ final class IslandController {
         }
 
         hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateHover() }
+            MainActor.assumeIsolated {
+                self?.updateHover()
+                self?.anticipateTrackEnd()
+            }
         }
     }
 
@@ -148,6 +155,7 @@ final class IslandController {
             releaseFocus()
             return
         }
+        guard !TrackSwap.shared.isActive else { return }
         updateArtworkFocus(stage: stage, mouse: mouse, origin: panel.frame.origin)
         updateArtworkPan(mouse: mouse, origin: panel.frame.origin)
     }
@@ -202,6 +210,133 @@ final class IslandController {
             try? await Task.sleep(for: .seconds(2.6))
             guard !Task.isCancelled, self != nil else { return }
             state.isPeeking = false
+        }
+    }
+
+    private func handleTrackChange(_ change: TrackChange) {
+        let state = IslandState.shared
+        let swap = TrackSwap.shared
+        state.resetArtworkZoom()
+
+        if swap.isActive, swap.fromID == change.previous?.id { return }
+        guard let previous = change.previous, state.peekOnTrackChange || state.isHovered else {
+            peek()
+            return
+        }
+        let skipped = previous.duration - change.previousPosition > 3
+        runSwap(leaving: previous,
+                position: change.previousPosition,
+                artwork: change.previousArtwork,
+                accent: change.previousAccent,
+                forward: true,
+                presentFor: skipped ? nil : 1.4)
+    }
+
+    private func handleSkip(forward: Bool) {
+        let monitor = NowPlayingMonitor.shared
+        let state = IslandState.shared
+        guard let track = monitor.track, state.peekOnTrackChange || state.isHovered else { return }
+        runSwap(leaving: track,
+                position: monitor.position,
+                artwork: monitor.artwork,
+                accent: monitor.accent,
+                forward: forward,
+                presentFor: nil)
+    }
+
+    private func anticipateTrackEnd() {
+        let monitor = NowPlayingMonitor.shared
+        let state = IslandState.shared
+        guard monitor.state == .playing,
+              let track = monitor.track,
+              track.duration > 10,
+              track.id != anticipatedTrackID,
+              !TrackSwap.shared.isActive,
+              !state.isScrubbing,
+              state.peekOnTrackChange || state.isHovered else { return }
+
+        let remaining = track.duration - monitor.position
+        guard remaining > 0, remaining <= 2.2 else { return }
+
+        anticipatedTrackID = track.id
+        runSwap(leaving: track,
+                position: monitor.position,
+                artwork: monitor.artwork,
+                accent: monitor.accent,
+                forward: true,
+                presentFor: 1.4,
+                patience: remaining + 2.5)
+    }
+
+    private func runSwap(leaving track: Track,
+                         position: TimeInterval,
+                         artwork: NSImage?,
+                         accent: RGB,
+                         forward: Bool,
+                         presentFor minimum: TimeInterval?,
+                         patience: TimeInterval = 2) {
+        let state = IslandState.shared
+        let swap = TrackSwap.shared
+        let monitor = NowPlayingMonitor.shared
+        let quick = minimum == nil
+
+        swapTask?.cancel()
+        state.isArtworkFocused = false
+        state.resetArtworkZoom()
+        peek()
+
+        let resumesExit = quick && swap.quick && swap.phase == .exit
+        if resumesExit {
+            swap.retarget(track: track, position: position)
+        } else {
+            swap.begin(track: track, position: position, artwork: artwork, accent: accent,
+                       forward: forward, quick: quick)
+        }
+
+        swapTask = Task { [weak self] in
+            if let minimum {
+                await Self.wait(atLeast: minimum, atMost: patience) { monitor.track?.id != track.id }
+                guard !Task.isCancelled else { return }
+                guard monitor.track?.id != track.id else {
+                    swap.finish()
+                    self?.peek()
+                    return
+                }
+                swap.exit()
+            } else if !resumesExit {
+                try? await Task.sleep(for: .milliseconds(40))
+                guard !Task.isCancelled else { return }
+                swap.exit()
+            }
+
+            await Self.wait(atLeast: quick ? 0.12 : 0.5, atMost: quick ? 3 : 2) {
+                monitor.track?.id != track.id && !monitor.isArtworkPending
+            }
+            guard !Task.isCancelled else { return }
+
+            if monitor.track?.id != track.id {
+                swap.slide()
+                try? await Task.sleep(for: .milliseconds(quick ? 300 : 820))
+                guard !Task.isCancelled else { return }
+            }
+
+            swap.settle()
+            try? await Task.sleep(for: .milliseconds(quick ? 300 : 750))
+            guard !Task.isCancelled else { return }
+
+            swap.finish()
+            self?.peek()
+        }
+    }
+
+    private static func wait(atLeast minimum: TimeInterval,
+                             atMost maximum: TimeInterval,
+                             until ready: () -> Bool) async {
+        let start = Date()
+        while !Task.isCancelled {
+            let elapsed = Date().timeIntervalSince(start)
+            if elapsed >= maximum || (elapsed >= minimum && ready()) { return }
+            try? await Task.sleep(for: .milliseconds(40))
         }
     }
 }
