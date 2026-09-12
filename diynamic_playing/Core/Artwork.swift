@@ -6,7 +6,13 @@ nonisolated struct RGB: Equatable, Sendable {
     var green: Double
     var blue: Double
 
-    static let neutral = RGB(red: 0.85, green: 0.85, blue: 0.88)
+    static let neutral = RGB(red: 0.92, green: 0.92, blue: 0.92)
+
+    var saturation: Double {
+        let highest = max(red, green, blue)
+        guard highest > 0 else { return 0 }
+        return (highest - min(red, green, blue)) / highest
+    }
 }
 
 nonisolated enum Artwork {
@@ -24,21 +30,22 @@ nonisolated enum Artwork {
         }
     }
 
+    static let minimumColourfulShare = 0.06
+    static let minimumBrightness = 0.22
+    static let minimumSaturation = 0.18
+
     static func accent(from data: Data) -> RGB {
         guard let pixels = downsample(data, side: 20) else { return .neutral }
 
         let binCount = 18
         var weights = [Double](repeating: 0, count: binCount)
         var sums = [RGB](repeating: RGB(red: 0, green: 0, blue: 0), count: binCount)
-        var fallback = RGB(red: 0, green: 0, blue: 0)
+        var colourful = 0
 
         for pixel in pixels {
-            fallback.red += pixel.red
-            fallback.green += pixel.green
-            fallback.blue += pixel.blue
-
             let hsb = toHSB(pixel)
-            guard hsb.brightness > 0.15, hsb.saturation > 0.12 else { continue }
+            guard hsb.brightness > minimumBrightness, hsb.saturation > minimumSaturation else { continue }
+            colourful += 1
             let bin = min(binCount - 1, Int(hsb.hue * Double(binCount)))
             let weight = hsb.saturation * hsb.brightness
             weights[bin] += weight
@@ -47,17 +54,14 @@ nonisolated enum Artwork {
             sums[bin].blue += pixel.blue * weight
         }
 
-        let count = Double(pixels.count)
-        var chosen = RGB(red: fallback.red / count, green: fallback.green / count, blue: fallback.blue / count)
+        guard Double(colourful) / Double(pixels.count) >= minimumColourfulShare,
+              let best = weights.indices.max(by: { weights[$0] < weights[$1] }),
+              weights[best] > 0 else { return .neutral }
 
-        if let best = weights.indices.max(by: { weights[$0] < weights[$1] }), weights[best] > 0 {
-            let weight = weights[best]
-            chosen = RGB(red: sums[best].red / weight,
-                         green: sums[best].green / weight,
-                         blue: sums[best].blue / weight)
-        }
-
-        return lift(chosen)
+        let weight = weights[best]
+        return lift(RGB(red: sums[best].red / weight,
+                        green: sums[best].green / weight,
+                        blue: sums[best].blue / weight))
     }
 
     private static func lift(_ rgb: RGB) -> RGB {

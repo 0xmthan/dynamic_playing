@@ -28,17 +28,10 @@ struct IslandView: View {
         .background {
             shape.fill(.black)
             shape.fill(
-                LinearGradient(colors: [monitor.accentColor.opacity(0.16), .clear],
+                LinearGradient(colors: [monitor.accentColor.opacity(0.16 * monitor.accentStrength), .clear],
                                startPoint: .top, endPoint: .bottom)
             )
             shape.stroke(.white.opacity(0.09), lineWidth: 0.6)
-        }
-        .background {
-            shape
-                .fill(monitor.accentColor)
-                .blur(radius: 26)
-                .opacity(stage == .expanded ? 0.28 : 0)
-                .offset(y: 10)
         }
         .clipShape(shape)
         .compositingGroup()

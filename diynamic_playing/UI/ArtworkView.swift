@@ -29,6 +29,6 @@ struct ArtworkView: View {
             RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .strokeBorder(.white.opacity(0.14), lineWidth: 0.5)
         }
-        .shadow(color: accent.opacity(0.45), radius: size * 0.18, y: size * 0.05)
+        .shadow(color: .black.opacity(0.5), radius: size * 0.16, y: size * 0.05)
     }
 }

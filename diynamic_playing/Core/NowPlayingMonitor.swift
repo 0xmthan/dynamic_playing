@@ -43,6 +43,10 @@ final class NowPlayingMonitor {
         Color(.sRGB, red: accent.red, green: accent.green, blue: accent.blue)
     }
 
+    var accentStrength: Double {
+        min(1, accent.saturation * 3)
+    }
+
     func start() {
         observePlayerNotifications()
         pollTask = Task { [weak self] in
