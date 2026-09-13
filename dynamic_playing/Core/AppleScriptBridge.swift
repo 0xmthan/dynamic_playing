@@ -8,7 +8,7 @@ struct ScriptError: Error {
 }
 
 nonisolated enum AppleScriptBridge {
-    private static let queue = DispatchQueue(label: "dev.mthan.diynamic-playing.applescript", qos: .userInitiated)
+    private static let queue = DispatchQueue(label: "dev.mthan.dynamic-playing.applescript", qos: .userInitiated)
 
     static func text(_ source: String) async -> Result<String, ScriptError> {
         await withCheckedContinuation { continuation in

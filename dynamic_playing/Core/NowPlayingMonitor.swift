@@ -95,7 +95,7 @@ final class NowPlayingMonitor {
 
     private func refresh() async {
         #if DEBUG
-        if ProcessInfo.processInfo.environment["DIYNAMIC_DEMO"] == "1" {
+        if ProcessInfo.processInfo.environment["DYNAMIC_DEMO"] == "1" {
             applyDemoSnapshot()
             return
         }

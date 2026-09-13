@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct diynamic_playingApp: App {
+struct dynamic_playingApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
@@ -50,7 +50,7 @@ struct MenuBarContent: View {
 
         Divider()
 
-        Button("Quit diynamic playing") {
+        Button("Quit dynamic playing") {
             NSApp.terminate(nil)
         }
         .keyboardShortcut("q")
